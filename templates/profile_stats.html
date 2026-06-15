@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Мой профиль геймера - GameRecommender{% endblock %}
+
+{% block content %}
+<div class="profile-stats-page">
+    <div class="profile-tabs">
+        <button class="profile-tab" onclick="location.href='/profile'">Мои игры</button>
+        <button class="profile-tab active" onclick="location.href='/profile/stats'">Мой профиль геймера</button>
+    </div>
+    
+    <h1>🧠 Мой профиль геймера</h1>
+    
+    {% if stats and stats.total_played > 0 %}
+    <div class="gamer-profile">
+        <div class="stats-summary">
+            <div class="stat-card">
+                <span class="stat-value">{{ stats.total_played }}</span>
+                <span class="stat-label">игр пройдено</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">{{ stats.avg_story_depth }}/10</span>
+                <span class="stat-label">средняя глубина сюжета</span>
+            </div>
+        </div>
+        
+        <div class="radar-chart-container">
+            <canvas id="gamerRadarChart"></canvas>
+        </div>
+        
+        <div class="stats-explanation">
+            <h3>📊 Что означают эти показатели?</h3>
+            <ul>
+                <li><strong>Усидчивость</strong> <span class="desc">— насколько ты способен проходить длинные и глубокие игры</span></li>
+                <li><strong>Концентрация</strong> <span class="desc">— процент пройденных игр от всех начатых</span></li>
+                <li><strong>IQ/Находчивость</strong> <span class="desc">— любовь к головоломкам, детективам и стратегиям</span></li>
+                <li><strong>Поток (Flow)</strong> <span class="desc">— способность погружаться в сюжет и мир игры</span></li>
+                <li><strong>Реакция</strong> <span class="desc">— навыки в экшенах и шутерах</span></li>
+                <li><strong>Стрессоустойчивость</strong> <span class="desc">— способность проходить хорроры и сложные игры</span></li>
+                <li><strong>Креативность</strong> <span class="desc">— интерес к песочницам и творческим играм</span></li>
+            </ul>
+        </div>
+        
+        <div class="recommendation-based-on-profile">
+            <h3>🎮 Исходя из твоего профиля, тебе могут понравиться:</h3>
+            {% if recommended_by_profile %}
+            <div class="recommendations-grid">
+                {% for item in recommended_by_profile %}
+                {% set game = item.game %}
+                {% set reason = item.reason %}
+                <div class="recommendation-card" onclick="location.href='{{ url_for('game_page', game_id=game.id) }}'">
+                    {% if game.cover_url %}
+                    <img src="{{ game.cover_url }}" alt="{{ game.title }}" loading="lazy">
+                    {% else %}
+                    <div class="no-image">Нет обложки</div>
+                    {% endif %}
+                    <div class="recommendation-info">
+                        <h3>{{ game.title }}</h3>
+                        <div class="meta">
+                            <span class="genre">{{ game.genre }}</span>
+                            <span class="year">{{ game.release_year }}</span>
+                        </div>
+                        <div class="recommendation-reason reason-profile">
+                            <span class="reason-icon">🎯</span>
+                            <span class="reason-text">{{ reason }}</span>
+                        </div>
+                        <div class="tags">
+                            {% for tag in game.tags[:3] %}
+                            <span class="tag">{{ tag.name }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-message">😕 Отметь больше игр как "Пройдено", чтобы получить персонализированные рекомендации!</p>
+            <a href="{{ url_for('index') }}" class="btn">Перейти к играм</a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>😕 Отметь несколько игр как "Пройдено", чтобы увидеть свой профиль геймера</p>
+        <a href="{{ url_for('index') }}" class="btn">Перейти к играм</a>
+    </div>
+    {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if stats and stats.total_played > 0 %}
+    const ctx = document.getElementById('gamerRadarChart').getContext('2d');
+    
+    new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: ['Усидчивость', 'Концентрация', 'IQ', 'Поток', 'Реакция', 'Стрессоуст.', 'Креативность'],
+            datasets: [{
+                label: 'Твой профиль',
+                data: [
+                    {{ stats.patience }},
+                    {{ stats.focus }},
+                    {{ stats.iq }},
+                    {{ stats.flow }},
+                    {{ stats.reaction }},
+                    {{ stats.stress_tolerance }},
+                    {{ stats.creativity }}
+                ],
+                backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                borderColor: '#4CAF50',
+                borderWidth: 2,
+                pointBackgroundColor: '#4CAF50',
+                pointBorderColor: '#fff',
+                pointRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        stepSize: 20,
+                        backdropColor: 'transparent',
+                        color: '#ffffff',
+                        font: {
+                            size: 14,
+                            weight: 'bold'
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.15)'
+                    },
+                    pointLabels: {
+                        color: '#ffffff',
+                        font: {
+                            size: 13,
+                            weight: 'bold'
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.raw + '/100';
+                        }
+                    }
+                },
+                legend: {
+                    labels: {
+                        color: '#ffffff',
+                        font: {
+                            size: 14,
+                            weight: 'bold'
+                        }
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

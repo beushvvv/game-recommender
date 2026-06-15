@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GameRecommender{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dark-theme">
+    <header>
+        <nav>
+            <div class="logo">🎮 GameRecommender</div>
+            <ul>
+                <li><a href="{{ url_for('index') }}">Главная</a></li>
+                {% if current_user.is_authenticated %}
+                <li><a href="{{ url_for('profile') }}">Мои игры</a></li>
+                <li><a href="{{ url_for('logout') }}">Выйти ({{ current_user.username }})</a></li>
+                {% else %}
+                <li><a href="{{ url_for('login') }}">Войти</a></li>
+                <li><a href="{{ url_for('register') }}">Регистрация</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        <div class="theme-switcher">
+            <button class="theme-btn" data-theme="light">☀️ Светлая</button>
+            <button class="theme-btn" data-theme="neon">🌈 Неон</button>
+            <button class="theme-btn" data-theme="monochrome">⚫ Монохром</button>
+            <button class="theme-btn" data-theme="dark" class="active">🌙 Тёмная</button>
+        </div>
+    </header>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+<script>
+// Переключение тем
+document.addEventListener('DOMContentLoaded', function() {
+    const themeBtns = document.querySelectorAll('.theme-btn');
+    
+    // Загружаем сохранённую тему
+    const savedTheme = localStorage.getItem('site-theme') || 'dark';
+    document.body.className = `theme-${savedTheme}`;
+    
+    // Подсвечиваем активную кнопку
+    themeBtns.forEach(btn => {
+        if (btn.dataset.theme === savedTheme) {
+            btn.classList.add('active');
+        }
+        btn.addEventListener('click', function() {
+            const theme = this.dataset.theme;
+            document.body.className = `theme-${theme}`;
+            localStorage.setItem('site-theme', theme);
+            
+            themeBtns.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Отправляем на сервер (если пользователь авторизован)
+            fetch('/api/theme', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme: theme })
+            }).catch(err => console.error('Error saving theme:', err));
+        });
+    });
+});
+</script>
+</html>

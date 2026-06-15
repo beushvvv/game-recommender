@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}Мои игры - GameRecommender{% endblock %}
+
+{% block content %}
+<div class="profile">
+    <div class="profile-tabs">
+        <button class="profile-tab active" onclick="location.href='/profile'">Мои игры</button>
+        <button class="profile-tab" onclick="location.href='/profile/stats'">Мой профиль геймера</button>
+    </div>
+    
+    <h1>Мои игры</h1>
+    
+    <div class="profile-stats">
+        <p><strong>Пользователь:</strong> {{ current_user.username }}</p>
+        <p><strong>На сайте с:</strong> {{ current_user.created_at.strftime('%d.%m.%Y') }}</p>
+        <p><strong>Всего игр:</strong> {{ games_with_status|length }}</p>
+        <p><strong>Пройдено:</strong> {{ games_with_status|selectattr('status', 'equalto', 'played')|list|length }}</p>
+        <p><strong>Брошено:</strong> {{ games_with_status|selectattr('status', 'equalto', 'dropped')|list|length }}</p>
+    </div>
+    
+    <h2>Статусы игр</h2>
+    
+    {% if games_with_status %}
+    <div class="status-tabs">
+        <button class="tab-btn active" onclick="filterGames('all')">Все</button>
+        <button class="tab-btn" onclick="filterGames('want')">📌 Планирую</button>
+        <button class="tab-btn" onclick="filterGames('playing')">🎮 Играю</button>
+        <button class="tab-btn" onclick="filterGames('played')">✅ Пройдено</button>
+        <button class="tab-btn" onclick="filterGames('dropped')">🚫 Брошено</button>
+    </div>
+    
+    <div class="games-list" id="games-list">
+        {% for item in games_with_status %}
+        <div class="profile-game-card" data-status="{{ item.status }}" data-game-id="{{ item.game.id }}">
+            <div class="game-card-inner" onclick="location.href='{{ url_for('game_page', game_id=item.game.id) }}'">
+                {% if item.game.cover_url %}
+                <img src="{{ item.game.cover_url }}" alt="{{ item.game.title }}" loading="lazy">
+                {% else %}
+                <div class="no-image">Нет обложки</div>
+                {% endif %}
+                <div class="profile-game-content">
+                    <h3>{{ item.game.title }}</h3>
+                    <span class="status-badge {{ item.status }}">
+                        {% if item.status == 'want' %}📌 Планирую
+                        {% elif item.status == 'playing' %}🎮 Играю
+                        {% elif item.status == 'played' %}✅ Прошел
+                        {% elif item.status == 'dropped' %}🚫 Бросил
+                        {% endif %}
+                    </span>
+                    {% if item.user_rating %}
+                    <span class="user-rating">★ {{ item.user_rating }}/10</span>
+                    {% endif %}
+                </div>
+            </div>
+            <button class="delete-status-btn" 
+                    data-game-id="{{ item.game.id }}" 
+                    data-game-title="{{ item.game.title }}"
+                    onclick="showDeleteModal(this)" 
+                    title="Удалить из моих игр">✖</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>😕 У вас пока нет отмеченных игр</p>
+        <a href="{{ url_for('index') }}" class="btn">Перейти к играм</a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Модальное окно подтверждения -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal">
+        <h3>🗑️ Удаление игры</h3>
+        <p id="modalMessage">Вы уверены, что хотите удалить игру из вашего списка?</p>
+        <div class="modal-actions">
+            <button class="modal-btn cancel" onclick="hideDeleteModal()">Отмена</button>
+            <button class="modal-btn delete" id="confirmDeleteBtn">Удалить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Переменные для модального окна
+let currentGameId = null;
+let currentGameTitle = '';
+
+// Показать модальное окно (через data-атрибуты)
+function showDeleteModal(button) {
+    currentGameId = button.dataset.gameId;
+    currentGameTitle = button.dataset.gameTitle;
+    
+    const modal = document.getElementById('deleteModal');
+    const message = document.getElementById('modalMessage');
+    message.textContent = `Вы уверены, что хотите удалить "${currentGameTitle}" из ваших игр?`;
+    
+    modal.classList.add('active');
+    
+    // Устанавливаем обработчик на кнопку удаления
+    document.getElementById('confirmDeleteBtn').onclick = function() {
+        confirmDelete();
+    };
+}
+
+// Скрыть модальное окно
+function hideDeleteModal() {
+    document.getElementById('deleteModal').classList.remove('active');
+}
+
+// Подтверждение удаления
+function confirmDelete() {
+    if (!currentGameId) return;
+    
+    fetch(`/api/game/${currentGameId}/status`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideDeleteModal();
+        
+        if (data.success) {
+            showToast(`✅ "${currentGameTitle}" удалена из ваших игр`, 'success');
+            
+            // Находим и удаляем карточку из DOM
+            const card = document.querySelector(`.profile-game-card[data-game-id="${currentGameId}"]`);
+            if (card) {
+                card.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => {
+                    card.remove();
+                    
+                    // Обновляем счетчики
+                    updateStats();
+                    
+                    // Если не осталось игр, показываем пустое состояние
+                    if (document.querySelectorAll('.profile-game-card').length === 0) {
+                        location.reload(); // Перезагружаем для показа пустого состояния
+                    }
+                }, 300);
+            }
+        } else {
+            showToast(`❌ Ошибка при удалении: ${data.message || 'Неизвестная ошибка'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        hideDeleteModal();
+        showToast('❌ Произошла ошибка при удалении', 'error');
+    });
+}
+
+// Показать уведомление
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('hide');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }, 3000);
+}
+
+// Обновление статистики
+function updateStats() {
+    const totalGames = document.querySelectorAll('.profile-game-card').length;
+    const playedGames = document.querySelectorAll('.profile-game-card[data-status="played"]').length;
+    const droppedGames = document.querySelectorAll('.profile-game-card[data-status="dropped"]').length;
+    
+    const statsElement = document.querySelector('.profile-stats');
+    if (statsElement) {
+        statsElement.innerHTML = `
+            <p><strong>Пользователь:</strong> {{ current_user.username }}</p>
+            <p><strong>На сайте с:</strong> {{ current_user.created_at.strftime('%d.%m.%Y') }}</p>
+            <p><strong>Всего игр:</strong> ${totalGames}</p>
+            <p><strong>Пройдено:</strong> ${playedGames}</p>
+            <p><strong>Брошено:</strong> ${droppedGames}</p>
+        `;
+    }
+}
+
+// Фильтрация игр по статусу
+function filterGames(status) {
+    const cards = document.querySelectorAll('.profile-game-card');
+    const buttons = document.querySelectorAll('.tab-btn');
+    
+    buttons.forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    
+    cards.forEach(card => {
+        if (status === 'all' || card.dataset.status === status) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+// Закрытие модального окна по Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideDeleteModal();
+    }
+});
+
+// Закрытие по клику вне модального окна
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideDeleteModal();
+    }
+});
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Можно добавить дополнительную логику при загрузке
+    console.log('Profile page loaded');
+});
+</script>
+{% endblock %}

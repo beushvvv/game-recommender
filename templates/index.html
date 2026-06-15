@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - GameRecommender{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Найди свою следующую сюжетную игру</h1>
+    <p>Персонализированный подбор игр с глубоким нарративом</p>
+</div>
+
+<!-- Блок статусов из "Мои игры" -->
+{% if current_user.is_authenticated %}
+<section class="status-categories">
+    <h2 class="section-title">📊 Мои статусы</h2>
+    <div class="status-categories-grid">
+        
+        <!-- Пройдено -->
+        <div class="status-card played {% if current_filter == 'played' %}active{% endif %}" 
+             onclick="window.location.href='{{ url_for('index', status='played') }}'">
+            <div class="status-icon">✅</div>
+            <div class="status-info">
+                <div class="status-name">Пройдено</div>
+                <div class="status-count">{{ user_status_counts.get('played', 0) }} игр</div>
+            </div>
+            <div class="status-preview">
+                {% for game in user_status_games.get('played', [])[:3] %}
+                <img src="{{ game.cover_url or '/static/images/no-image.jpg' }}" alt="{{ game.title }}" title="{{ game.title }}">
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Играю -->
+        <div class="status-card playing {% if current_filter == 'playing' %}active{% endif %}" 
+             onclick="window.location.href='{{ url_for('index', status='playing') }}'">
+            <div class="status-icon">🎮</div>
+            <div class="status-info">
+                <div class="status-name">Играю</div>
+                <div class="status-count">{{ user_status_counts.get('playing', 0) }} игр</div>
+            </div>
+            <div class="status-preview">
+                {% for game in user_status_games.get('playing', [])[:3] %}
+                <img src="{{ game.cover_url or '/static/images/no-image.jpg' }}" alt="{{ game.title }}" title="{{ game.title }}">
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Планирую -->
+        <div class="status-card want {% if current_filter == 'want' %}active{% endif %}" 
+             onclick="window.location.href='{{ url_for('index', status='want') }}'">
+            <div class="status-icon">📌</div>
+            <div class="status-info">
+                <div class="status-name">Планирую</div>
+                <div class="status-count">{{ user_status_counts.get('want', 0) }} игр</div>
+            </div>
+            <div class="status-preview">
+                {% for game in user_status_games.get('want', [])[:3] %}
+                <img src="{{ game.cover_url or '/static/images/no-image.jpg' }}" alt="{{ game.title }}" title="{{ game.title }}">
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Брошено -->
+        <div class="status-card dropped {% if current_filter == 'dropped' %}active{% endif %}" 
+             onclick="window.location.href='{{ url_for('index', status='dropped') }}'">
+            <div class="status-icon">🚫</div>
+            <div class="status-info">
+                <div class="status-name">Брошено</div>
+                <div class="status-count">{{ user_status_counts.get('dropped', 0) }} игр</div>
+            </div>
+            <div class="status-preview">
+                {% for game in user_status_games.get('dropped', [])[:3] %}
+                <img src="{{ game.cover_url or '/static/images/no-image.jpg' }}" alt="{{ game.title }}" title="{{ game.title }}">
+                {% endfor %}
+            </div>
+        </div>
+        
+    </div>
+    
+    {% if current_filter != 'all' %}
+    <div class="filter-reset">
+        <a href="{{ url_for('index') }}" class="reset-btn">✖ Показать все игры</a>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- Блок рекомендаций (только для авторизованных) -->
+{% if current_user.is_authenticated and recommended_games %}
+<section class="recommendations-section">
+    <h2 class="section-title with-border">🎯 Рекомендовано для тебя</h2>
+    <div class="recommendations-grid">
+        {% for item in recommended_games %}
+        {% set game = item.game %}
+        {% set reason = item.reason %}
+        {% set reason_type = item.type %}
+        <div class="recommendation-card" onclick="location.href='{{ url_for('game_page', game_id=game.id) }}'">
+            {% if game.cover_url %}
+            <img src="{{ game.cover_url }}" alt="{{ game.title }}" loading="lazy">
+            {% else %}
+            <div class="no-image">Нет обложки</div>
+            {% endif %}
+            <div class="recommendation-info">
+                <h3>{{ game.title }}</h3>
+                <div class="meta">
+                    <span class="genre">{{ game.genre }}</span>
+                    <span class="year">{{ game.release_year }}</span>
+                </div>
+                <div class="recommendation-reason reason-{{ reason_type }}">
+                    <span class="reason-icon">
+                        {% if reason_type == 'tag' %}🏷️
+                        {% elif reason_type == 'genre' %}🎭
+                        {% else %}🎲
+                        {% endif %}
+                    </span>
+                    <span class="reason-text">{{ reason }}</span>
+                </div>
+                <div class="tags">
+                    {% for tag in game.tags[:3] %}
+                    <span class="tag">{{ tag.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Основная сетка игр -->
+{% if current_filter != 'all' %}
+<h2 class="section-title centered">{{ category_title }}</h2>
+{% else %}
+<h2 class="section-title centered">📚 Все игры</h2>
+{% endif %}
+
+<!-- Сообщение для пустой категории -->
+{% if is_empty_category %}
+<div class="empty-category-message">
+    <div class="empty-icon">📭</div>
+    <h3>Здесь пока что пусто</h3>
+    <p>У вас нет игр в этой категории. Отметьте игры на главной странице!</p>
+    <a href="{{ url_for('index') }}" class="btn">Вернуться ко всем играм</a>
+</div>
+
+{% elif games %}
+<div class="games-grid">
+    {% for game in games %}
+    <div class="game-card" onclick="location.href='{{ url_for('game_page', game_id=game.id) }}'">
+        <div class="game-card-image">
+            {% if game.cover_url %}
+            <img src="{{ game.cover_url }}" alt="{{ game.title }}" loading="lazy">
+            {% else %}
+            <div class="no-image">Нет обложки</div>
+            {% endif %}
+            
+            <!-- Значок статуса -->
+            {% if current_user.is_authenticated and game.id in user_game_statuses %}
+            <div class="status-badge-icon {{ user_game_statuses[game.id] }}">
+                {% if user_game_statuses[game.id] == 'played' %}
+                ✅
+                {% elif user_game_statuses[game.id] == 'playing' %}
+                🎮
+                {% elif user_game_statuses[game.id] == 'want' %}
+                📌
+                {% elif user_game_statuses[game.id] == 'dropped' %}
+                🚫
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="game-card-content">
+            <h3>{{ game.title }}</h3>
+            <div class="meta">
+                <span class="genre">{{ game.genre }}</span>
+                <span class="year">{{ game.release_year }}</span>
+            </div>
+            <div class="tags">
+                {% for tag in game.tags[:3] %}
+                <span class="tag">{{ tag.name }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Пагинация -->
+{% if pagination and pagination.pages > 1 %}
+<div class="pagination">
+    {% if pagination.has_prev %}
+        <a href="{{ url_for('index', page=pagination.prev_num, status=current_filter) }}" class="page-link">←</a>
+    {% else %}
+        <span class="page-link disabled">←</span>
+    {% endif %}
+    
+    {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if page_num %}
+            {% if page_num == pagination.page %}
+                <span class="page-link current">{{ page_num }}</span>
+            {% else %}
+                <a href="{{ url_for('index', page=page_num, status=current_filter) }}" class="page-link">{{ page_num }}</a>
+            {% endif %}
+        {% else %}
+            <span class="page-link dots">…</span>
+        {% endif %}
+    {% endfor %}
+    
+    {% if pagination.has_next %}
+        <a href="{{ url_for('index', page=pagination.next_num, status=current_filter) }}" class="page-link">→</a>
+    {% else %}
+        <span class="page-link disabled">→</span>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+    <p>😕 В базе пока нет игр</p>
+    <a href="#" class="btn">Добавить первую игру</a>
+</div>
+{% endif %}
+{% endblock %}

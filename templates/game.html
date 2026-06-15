@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.title }} - GameRecommender{% endblock %}
+
+{% block content %}
+<div class="game-page">
+    <div class="game-header">
+        <div class="game-cover">
+            {% if game.cover_url %}
+            <img src="{{ game.cover_url }}" alt="{{ game.title }}">
+            {% else %}
+            <div class="no-image">Нет обложки</div>
+            {% endif %}
+        </div>
+        <div class="game-info">
+            <h1>{{ game.title }}</h1>
+            <div class="meta">
+                <span class="genre">{{ game.genre }}</span>
+                <span class="year">{{ game.release_year }}</span>
+                {% if game.developer %}
+                <span class="developer">{{ game.developer }}</span>
+                {% endif %}
+            </div>
+            {% if game.story_depth %}
+            <div class="story-depth">
+                Глубина сюжета: {{ game.story_depth }}/10
+            </div>
+            {% endif %}
+            
+            {% if current_user.is_authenticated %}
+            <div class="status-buttons">
+                <button class="status-btn {% if user_status and user_status.status == 'want' %}active{% endif %}" 
+                        onclick="setStatus('want')">📌 Планирую</button>
+                <button class="status-btn {% if user_status and user_status.status == 'playing' %}active{% endif %}" 
+                        onclick="setStatus('playing')">🎮 Играю</button>
+                <button class="status-btn {% if user_status and user_status.status == 'played' %}active{% endif %}" 
+                        onclick="setStatus('played')">✅ Прошел</button>
+                <button class="status-btn {% if user_status and user_status.status == 'dropped' %}active{% endif %}" 
+                        onclick="setStatus('dropped')">🚫 Бросил</button>
+            </div>
+            {% else %}
+            <p class="login-prompt">
+                <a href="{{ url_for('login') }}">Войдите</a>, чтобы отмечать игры
+            </p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="game-description">
+        <h2>Описание</h2>
+        <p>{{ game.description }}</p>
+    </div>
+
+        {% if game.requirements %}
+    <div class="system-requirements">
+        <h2>🖥️ Системные требования</h2>
+        
+        {% for req in game.requirements %}
+        <div class="requirement-block {{ req.requirement_type }}">
+            <h3>{{ 'Минимальные' if req.requirement_type == 'min' else 'Рекомендуемые' }}</h3>
+            <table class="req-table">
+                {% if req.os %}<tr><td>ОС:</td><td>{{ req.os }}</td></tr>{% endif %}
+                {% if req.cpu %}<tr><td>Процессор:</td><td>{{ req.cpu }}</td></tr>{% endif %}
+                {% if req.ram %}<tr><td>Оперативная память:</td><td>{{ req.ram }}</td></tr>{% endif %}
+                {% if req.gpu %}<tr><td>Видеокарта:</td><td>{{ req.gpu }}</td></tr>{% endif %}
+                {% if req.directx %}<tr><td>DirectX:</td><td>{{ req.directx }}</td></tr>{% endif %}
+                {% if req.storage %}<tr><td>Место на диске:</td><td>{{ req.storage }}</td></tr>{% endif %}
+            </table>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    {% if game.trivia %}
+    <div class="trivia">
+        <h3>📝 Интересные факты</h3>
+        <p>{{ game.trivia }}</p>
+    </div>
+    {% endif %}
+    
+    <div class="game-tags">
+        <h3>🏷️ Теги</h3>
+        <div class="tags">
+            {% for tag in game.tags %}
+            <span class="tag">{{ tag.name }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    
+        {% if similar_games %}
+    <div class="similar-games">
+        <h2>🎯 Похожие игры</h2>
+        <div class="similar-games-grid">
+            {% for similar in similar_games %}
+            <div class="similar-game-card" onclick="location.href='{{ url_for('game_page', game_id=similar.id) }}'">
+                {% if similar.cover_url %}
+                <img src="{{ similar.cover_url }}" alt="{{ similar.title }}">
+                {% else %}
+                <div class="no-image">Нет обложки</div>
+                {% endif %}
+                <div class="similar-game-info">
+                    <h4>{{ similar.title }}</h4>
+                    <div class="similar-game-meta">
+                        <span>{{ similar.genre }}</span>
+                        <span>{{ similar.release_year }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="back-link">
+        <a href="{{ url_for('index') }}">← Назад к списку</a>
+    </div>
+</div>
+
+<script>
+function setStatus(status) {
+    fetch(`/api/game/{{ game.id }}/status`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.querySelectorAll('.status-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+</script>
+{% endblock %}

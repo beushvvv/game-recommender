@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Страница не найдена{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-container">
+        <div class="error-code">404</div>
+        <h1>Страница не найдена</h1>
+        <p>Возможно, игра была удалена, или вы перешли по неправильной ссылке.</p>
+        <a href="{{ url_for('index') }}" class="error-btn">На главную</a>
+    </div>
+</div>
+{% endblock %}
