@@ -13,9 +13,9 @@
 <section class="status-categories">
     <h2 class="section-title">📊 Мои статусы</h2>
     <div class="status-categories-grid">
-        
+
         <!-- Пройдено -->
-        <div class="status-card played {% if current_filter == 'played' %}active{% endif %}" 
+        <div class="status-card played {% if current_filter == 'played' %}active{% endif %}"
              onclick="window.location.href='{{ url_for('index', status='played') }}'">
             <div class="status-icon">✅</div>
             <div class="status-info">
@@ -28,9 +28,9 @@
                 {% endfor %}
             </div>
         </div>
-        
+
         <!-- Играю -->
-        <div class="status-card playing {% if current_filter == 'playing' %}active{% endif %}" 
+        <div class="status-card playing {% if current_filter == 'playing' %}active{% endif %}"
              onclick="window.location.href='{{ url_for('index', status='playing') }}'">
             <div class="status-icon">🎮</div>
             <div class="status-info">
@@ -43,9 +43,9 @@
                 {% endfor %}
             </div>
         </div>
-        
+
         <!-- Планирую -->
-        <div class="status-card want {% if current_filter == 'want' %}active{% endif %}" 
+        <div class="status-card want {% if current_filter == 'want' %}active{% endif %}"
              onclick="window.location.href='{{ url_for('index', status='want') }}'">
             <div class="status-icon">📌</div>
             <div class="status-info">
@@ -58,9 +58,9 @@
                 {% endfor %}
             </div>
         </div>
-        
+
         <!-- Брошено -->
-        <div class="status-card dropped {% if current_filter == 'dropped' %}active{% endif %}" 
+        <div class="status-card dropped {% if current_filter == 'dropped' %}active{% endif %}"
              onclick="window.location.href='{{ url_for('index', status='dropped') }}'">
             <div class="status-icon">🚫</div>
             <div class="status-info">
@@ -73,9 +73,9 @@
                 {% endfor %}
             </div>
         </div>
-        
+
     </div>
-    
+
     {% if current_filter != 'all' %}
     <div class="filter-reset">
         <a href="{{ url_for('index') }}" class="reset-btn">✖ Показать все игры</a>
@@ -126,6 +126,35 @@
 </section>
 {% endif %}
 
+<!-- ===== ФИЛЬТР ПО ЖАНРАМ ===== -->
+{% if all_tags %}
+<section class="filter-section">
+    <form method="GET" action="{{ url_for('index') }}" class="filter-form">
+        {% if current_filter != 'all' %}
+            <input type="hidden" name="status" value="{{ current_filter }}">
+        {% endif %}
+
+        <div class="filter-row">
+            <label for="tag-filter">🎭 Фильтр по жанру:</label>
+            <select name="tag" id="tag-filter" onchange="this.form.submit()">
+                <option value="">Все жанры</option>
+                {% for tag in all_tags %}
+                    <option value="{{ tag.id }}" {% if tag.id == selected_tag_id %}selected{% endif %}>
+                        {{ tag.name }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            {% if selected_tag_id %}
+                <a href="{{ url_for('index', status=current_filter if current_filter != 'all' else None) }}"
+                   class="filter-reset-btn">✕ Сбросить</a>
+            {% endif %}
+        </div>
+    </form>
+</section>
+{% endif %}
+<!-- ===== КОНЕЦ БЛОКА ФИЛЬТРА ===== -->
+
 <!-- Основная сетка игр -->
 {% if current_filter != 'all' %}
 <h2 class="section-title centered">{{ category_title }}</h2>
@@ -152,7 +181,7 @@
             {% else %}
             <div class="no-image">Нет обложки</div>
             {% endif %}
-            
+
             <!-- Значок статуса -->
             {% if current_user.is_authenticated and game.id in user_game_statuses %}
             <div class="status-badge-icon {{ user_game_statuses[game.id] }}">
@@ -188,25 +217,25 @@
 {% if pagination and pagination.pages > 1 %}
 <div class="pagination">
     {% if pagination.has_prev %}
-        <a href="{{ url_for('index', page=pagination.prev_num, status=current_filter) }}" class="page-link">←</a>
+        <a href="{{ url_for('index', page=pagination.prev_num, status=current_filter, tag=selected_tag_id) }}" class="page-link">←</a>
     {% else %}
         <span class="page-link disabled">←</span>
     {% endif %}
-    
+
     {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
         {% if page_num %}
             {% if page_num == pagination.page %}
                 <span class="page-link current">{{ page_num }}</span>
             {% else %}
-                <a href="{{ url_for('index', page=page_num, status=current_filter) }}" class="page-link">{{ page_num }}</a>
+                <a href="{{ url_for('index', page=page_num, status=current_filter, tag=selected_tag_id) }}" class="page-link">{{ page_num }}</a>
             {% endif %}
         {% else %}
             <span class="page-link dots">…</span>
         {% endif %}
     {% endfor %}
-    
+
     {% if pagination.has_next %}
-        <a href="{{ url_for('index', page=pagination.next_num, status=current_filter) }}" class="page-link">→</a>
+        <a href="{{ url_for('index', page=pagination.next_num, status=current_filter, tag=selected_tag_id) }}" class="page-link">→</a>
     {% else %}
         <span class="page-link disabled">→</span>
     {% endif %}
