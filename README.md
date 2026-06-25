@@ -5,4 +5,4 @@
 * **Frontend:** HTML5, CSS3, JavaScript (DOM, динамическое переключение цветов
 * **Backend:** Python (Flask), размещение на хостинге PythonAnywhere
 ## Демо-версия проекта:
-Посмотреть работающий сайт можно здесь: https://pythonanywhere.com
+Посмотреть работающий сайт можно здесь: https://bensh3v.pythonanywhere.com/
