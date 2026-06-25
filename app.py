@@ -9,7 +9,7 @@ from collections import Counter
 app = Flask(__name__)
 import os
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-for-local')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://postgres:пароль@localhost/game_recommender')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////home/bensh3v/mysite/games.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -25,10 +25,10 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     theme_preference = db.Column(db.String(10), default='dark')
     created_at = db.Column(db.DateTime, default=datetime.now)
-    
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-    
+
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
@@ -44,7 +44,8 @@ class Game(db.Model):
     story_depth = db.Column(db.Integer)
     has_choices = db.Column(db.Boolean, default=False)
     trivia = db.Column(db.Text)
-    
+    playtime_hours = db.Column(db.Integer)
+
     tags = db.relationship('Tag', secondary='game_tags', lazy='subquery',
                            backref=db.backref('games', lazy=True))
 
@@ -65,7 +66,7 @@ class UserGameStatus(db.Model):
     status = db.Column(db.String(20))
     user_rating = db.Column(db.Integer)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-    
+
     # Добавь эту строку!
     game = db.relationship('Game', backref='user_statuses_backref')
 
@@ -80,7 +81,7 @@ class SystemRequirement(db.Model):
     gpu = db.Column(db.String(200))
     directx = db.Column(db.String(50))
     storage = db.Column(db.String(50))
-    
+
     game = db.relationship('Game', backref=db.backref('requirements', lazy=True))
 
 @login_manager.user_loader
@@ -93,18 +94,18 @@ def get_recommendations_for_user(user_id, limit=4):
     на основе статусов пользователя (только played/playing, исключая dropped)
     """
     from collections import Counter
-    
+
     # Получаем игры, которые пользователь прошел или играет
     user_games = db.session.query(UserGameStatus).filter(
         UserGameStatus.user_id == user_id,
         UserGameStatus.status.in_(['played', 'playing'])
     ).all()
-    
+
     # ID всех игр пользователя (чтобы не рекомендовать уже имеющиеся)
     all_user_game_ids = [ug.game_id for ug in db.session.query(UserGameStatus).filter(
         UserGameStatus.user_id == user_id
     ).all()]
-    
+
     # Если нет пройденных игр
     if not user_games:
         # Показываем самые популярные игры
@@ -113,7 +114,7 @@ def get_recommendations_for_user(user_id, limit=4):
         ).join(UserGameStatus).group_by(Game.id).order_by(
             func.count(UserGameStatus.game_id).desc()
         ).limit(limit).all()
-        
+
         recommendations = []
         for game, count in popular_games:
             recommendations.append({
@@ -121,12 +122,12 @@ def get_recommendations_for_user(user_id, limit=4):
                 'reason': f'Популярная игра среди пользователей ({count} человек)'
             })
         return recommendations
-    
+
     # Собираем все теги и жанры из игр пользователя
     tag_counter = Counter()
     genre_counter = Counter()
     games_with_tags = []
-    
+
     for user_game in user_games:
         game = user_game.game
         if game and game.tags:
@@ -138,14 +139,14 @@ def get_recommendations_for_user(user_id, limit=4):
                 })
         if game and game.genre:
             genre_counter[game.genre] += 1
-    
+
     # Топ тегов и жанров
     top_tags = tag_counter.most_common(5)
     top_genres = genre_counter.most_common(2)
-    
+
     # Собираем рекомендации
     recommendations = []
-    
+
     # 1. Рекомендации по тегам (основные)
     if top_tags:
         top_tag_ids = [tag_id for tag_id, _ in top_tags[:5]]
@@ -154,7 +155,7 @@ def get_recommendations_for_user(user_id, limit=4):
             tag = Tag.query.get(tag_id)
             if tag:
                 top_tag_names.append(tag.name)
-        
+
         # Ищем игры с этими тегами
         tag_games = db.session.query(Game).join(GameTags).filter(
             GameTags.tag_id.in_(top_tag_ids),
@@ -162,57 +163,57 @@ def get_recommendations_for_user(user_id, limit=4):
         ).group_by(Game.id).order_by(
             func.count(GameTags.tag_id).desc()
         ).limit(limit).all()
-        
+
         for game in tag_games:
             # Находим общие теги для этой игры
             common_tags = []
             for tag in game.tags:
                 if tag.id in top_tag_ids:
                     common_tags.append(tag.name)
-            
+
             reason = f"Тебе понравились игры с тегами: {', '.join(common_tags[:3])}"
             recommendations.append({
                 'game': game,
                 'reason': reason,
                 'type': 'tag'
             })
-    
+
     # 2. Если не хватило рекомендаций, добавляем по жанрам
     if len(recommendations) < limit and top_genres:
         top_genre_name = top_genres[0][0]
-        
+
         genre_games = Game.query.filter(
             Game.genre == top_genre_name,
             ~Game.id.in_(all_user_game_ids),
             ~Game.id.in_([r['game'].id for r in recommendations])
         ).limit(limit - len(recommendations)).all()
-        
+
         for game in genre_games:
             recommendations.append({
                 'game': game,
                 'reason': f'Ты часто выбираешь жанр {top_genre_name}',
                 'type': 'genre'
             })
-    
+
     # 3. Если всё еще мало, добавляем случайные игры
     if len(recommendations) < limit:
         random_games = Game.query.filter(
             ~Game.id.in_(all_user_game_ids),
             ~Game.id.in_([r['game'].id for r in recommendations])
         ).order_by(func.random()).limit(limit - len(recommendations)).all()
-        
+
         for game in random_games:
             recommendations.append({
                 'game': game,
                 'reason': 'Случайная рекомендация, попробуй что-то новое',
                 'type': 'random'
             })
-    
+
     return recommendations[:limit]
 
 def calculate_gamer_profile(user_id):
     """Рассчитывает профиль геймера на основе пройденных игр"""
-    
+
     with app.app_context():
         # Получаем игры со статусом 'played'
         played_games = db.session.query(Game).join(
@@ -221,18 +222,18 @@ def calculate_gamer_profile(user_id):
             UserGameStatus.user_id == user_id,
             UserGameStatus.status == 'played'
         ).all()
-        
+
         dropped_games = db.session.query(Game).join(
             UserGameStatus, UserGameStatus.game_id == Game.id
         ).filter(
             UserGameStatus.user_id == user_id,
             UserGameStatus.status == 'dropped'
         ).count()
-        
+
         total_played = len(played_games)
         if total_played == 0:
             return None
-        
+
         # Собираем теги из пройденных игр
         tag_counter = {}
         story_depth_sum = 0
@@ -243,14 +244,14 @@ def calculate_gamer_profile(user_id):
         strategy_games = 0
         creative_games = 0
         hard_games = 0
-        
+
         for game in played_games:
             story_depth_sum += game.story_depth or 5
-            
+
             for tag in game.tags:
                 tag_name = tag.name
                 tag_counter[tag_name] = tag_counter.get(tag_name, 0) + 1
-                
+
                 # Классифицируем теги
                 if tag_name in ['Головоломка', 'Детектив', 'Стратегия', 'Пазл']:
                     logic_games += 1
@@ -266,38 +267,38 @@ def calculate_gamer_profile(user_id):
                     creative_games += 1
                 if tag_name in ['Сложная', 'Souls-like', 'Выживание']:
                     hard_games += 1
-        
+
         # Нормализуем значения (0-100)
         def normalize(value, max_val=None):
             if max_val:
                 return min(100, int(value / max_val * 100)) if max_val > 0 else 0
             return min(100, value)
-        
+
         # Рассчитываем характеристики
         avg_story_depth = story_depth_sum / total_played if total_played > 0 else 5
-        
+
         # 1. Усидчивость (на основе story_depth и кол-ва пройденных игр)
         patience = normalize(avg_story_depth * 10, 100)
-        
+
         # 2. Концентрация (% пройденных от общего числа начатых)
         total_started = total_played + dropped_games
         focus = normalize(int(total_played / total_started * 100)) if total_started > 0 else 50
-        
+
         # 3. IQ/Находчивость (на основе логических игр)
         iq = normalize(logic_games * 15, 100) if logic_games > 0 else 20
-        
+
         # 4. Поток (Flow) - на основе story_depth и RPG тегов
         flow = normalize(avg_story_depth * 12, 100)
-        
+
         # 5. Реакция (на основе экшен-игр)
         reaction = normalize(action_games * 12, 100)
-        
+
         # 6. Стрессоустойчивость (на основе хорроров и сложных игр)
         stress_tolerance = normalize((horror_games + hard_games) * 15, 100)
-        
+
         # 7. Креативность (на основе песочниц/творческих игр)
         creativity = normalize(creative_games * 20, 100)
-        
+
         return {
             'patience': patience,           # Усидчивость
             'focus': focus,                 # Концентрация
@@ -316,7 +317,7 @@ def get_recommendations_by_profile(user_id, limit=4):
         profile = calculate_gamer_profile(user_id)
         if not profile:
             return []
-        
+
         # Определяем сильные стороны пользователя (где значение > 60)
         strong_traits = []
         trait_scores = {
@@ -328,11 +329,11 @@ def get_recommendations_by_profile(user_id, limit=4):
             'stress_tolerance': profile['stress_tolerance'],
             'creativity': profile['creativity']
         }
-        
+
         # Сортируем по убыванию и берём топ-3 характеристики
         sorted_traits = sorted(trait_scores.items(), key=lambda x: x[1], reverse=True)[:3]
         strong_traits = [trait for trait, _ in sorted_traits]
-        
+
         # Маппинг характеристик на теги/жанры и пояснения
         trait_to_tags = {
             'patience': {
@@ -364,27 +365,27 @@ def get_recommendations_by_profile(user_id, limit=4):
                 'reason': 'у тебя развито творческое мышление'
             }
         }
-        
+
         # Собираем все теги для рекомендаций
         recommended_tags = []
         recommendation_reasons = {}
-        
+
         for trait in strong_traits:
             trait_info = trait_to_tags.get(trait, {})
             for tag in trait_info.get('tags', []):
                 if tag not in recommended_tags:
                     recommended_tags.append(tag)
                     recommendation_reasons[tag] = trait_info.get('reason', f'тебе подходит характеристика {trait}')
-        
+
         # ID игр, которые уже есть у пользователя
         user_game_ids = [ug.game_id for ug in UserGameStatus.query.filter_by(user_id=user_id).all()]
-        
+
         # Ищем игры по тегам
         recommendations = []
         if recommended_tags:
             tag_objects = Tag.query.filter(Tag.name.in_(recommended_tags)).all()
             tag_ids = [tag.id for tag in tag_objects]
-            
+
             if tag_ids:
                 # Получаем игры с подсчётом совпадающих тегов
                 games_with_matches = db.session.query(
@@ -395,7 +396,7 @@ def get_recommendations_by_profile(user_id, limit=4):
                 ).group_by(Game.id).order_by(
                     func.count(GameTags.tag_id).desc()
                 ).limit(limit * 2).all()
-                
+
                 # Формируем результат с пояснениями
                 for game, match_count in games_with_matches:
                     # Находим, какие именно характеристики подошли
@@ -405,7 +406,7 @@ def get_recommendations_by_profile(user_id, limit=4):
                         game_tag_names = [tag.name for tag in game.tags]
                         if any(tag in trait_tags for tag in game_tag_names):
                             matched_traits.append(trait)
-                    
+
                     # Создаём пояснение
                     trait_names = {
                         'patience': 'усидчивость',
@@ -416,11 +417,11 @@ def get_recommendations_by_profile(user_id, limit=4):
                         'stress_tolerance': 'стрессоустойчивость',
                         'creativity': 'креативность'
                     }
-                    
+
                     # Правильные формы для слова "развит/развита/развито"
                     feminine_traits = ['focus', 'reaction', 'stress_tolerance', 'creativity', 'patience']  # развита
                     neuter_traits = ['iq', 'flow']  # развито
-                    
+
                     if matched_traits:
                         if len(matched_traits) == 1:
                             trait = matched_traits[0]
@@ -436,30 +437,30 @@ def get_recommendations_by_profile(user_id, limit=4):
                             reason = f"Рекомендуется, потому что у тебя развиты {traits_text}"
                     else:
                         reason = "Подходит под твой игровой профиль"
-                    
+
                     recommendations.append({
                         'game': game,
                         'reason': reason,
                         'match_count': match_count
                     })
-                    
+
                     if len(recommendations) >= limit:
                         break
-        
+
         # Если не хватило, добавляем популярные игры с общим пояснением
         if len(recommendations) < limit:
             popular_games = Game.query.filter(
                 ~Game.id.in_(user_game_ids),
                 ~Game.id.in_([r['game'].id for r in recommendations])
             ).order_by(func.random()).limit(limit - len(recommendations)).all()
-            
+
             for game in popular_games:
                 recommendations.append({
                     'game': game,
                     'reason': 'Популярная игра, которая может тебе понравиться',
                     'match_count': 0
                 })
-        
+
         return recommendations[:limit]
 
 @app.route('/test-500')
@@ -470,61 +471,69 @@ def test_500():
 def index():
     page = request.args.get('page', 1, type=int)
     filter_status = request.args.get('status', 'all')
+    filter_tag = request.args.get('tag', type=int)
     per_page = 12
-    
-    # Получаем игры с фильтром по статусу (если выбран)
+
     games = []
     pagination = None
-    
-    # Словарь статусов для всех игр пользователя (для отображения значков)
     user_game_statuses = {}
-    
+
     if current_user.is_authenticated:
-        # Получаем все статусы пользователя
         user_statuses = UserGameStatus.query.filter_by(user_id=current_user.id).all()
         for us in user_statuses:
             user_game_statuses[us.game_id] = us.status
-    
+
+    # --- БАЗОВЫЙ ЗАПРОС ---
+    query = Game.query
+
+    # 1. Фильтр по статусу (если выбран)
     if filter_status != 'all' and current_user.is_authenticated:
-        # Находим ID игр с выбранным статусом
         user_game_ids = [ug.game_id for ug in UserGameStatus.query.filter_by(
-            user_id=current_user.id, 
+            user_id=current_user.id,
             status=filter_status
         ).all()]
-        
         if user_game_ids:
-            pagination = Game.query.filter(Game.id.in_(user_game_ids)).paginate(
-                page=page, per_page=per_page, error_out=False
-            )
-            games = pagination.items
+            query = query.filter(Game.id.in_(user_game_ids))
         else:
+            # Если нет игр в этой категории — показываем пустую страницу
+            # НО МЫ НЕ ВОЗВРАЩАЕМСЯ РАНЬШЕ, А ПРОДОЛЖАЕМ
             games = []
             pagination = None
+            # НЕ ВОЗВРАЩАЕМСЯ ЗДЕСЬ! ДАЛЬШЕ БУДЕТ ОБЩИЙ РЕНДЕР
     else:
-        # Обычная пагинация для всех игр
-        pagination = Game.query.paginate(page=page, per_page=per_page, error_out=False)
+        # Если статус не выбран — ничего не делаем с query
+        pass
+
+    # 2. ФИЛЬТР ПО ТЕГУ (ВСЕГДА, ЕСЛИ ВЫБРАН)
+    if filter_tag:
+        query = query.join(GameTags).filter(GameTags.tag_id == filter_tag)
+
+    # 3. Пагинация (ЕСЛИ ЕСТЬ ИГРЫ)
+    if filter_status != 'all' and current_user.is_authenticated and not user_game_ids:
+        # Если игр нет — games уже пустой, pagination = None
+        pass
+    else:
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         games = pagination.items
-    
-    # Получаем рекомендации
+
+    # --- ВСЁ ОСТАЛЬНОЕ (рекомендации, статусы, и т.д.) ---
     recommended_games = []
     if current_user.is_authenticated:
         recommended_games = get_recommendations_for_user(current_user.id, limit=4)
-    
-    # Получаем статусы игр пользователя для отображения категорий
+
     user_status_counts = {}
     user_status_games = {}
     if current_user.is_authenticated:
         statuses = UserGameStatus.query.filter_by(user_id=current_user.id).all()
         for s in statuses:
             user_status_counts[s.status] = user_status_counts.get(s.status, 0) + 1
-        
         for status in ['played', 'playing', 'want', 'dropped']:
             games_with_status = UserGameStatus.query.filter_by(
-                user_id=current_user.id, 
+                user_id=current_user.id,
                 status=status
             ).join(Game).limit(3).all()
             user_status_games[status] = [ug.game for ug in games_with_status]
-    
+
     category_title = ''
     if filter_status != 'all':
         status_names = {
@@ -534,10 +543,25 @@ def index():
             'dropped': 'Игры, которые я бросил'
         }
         category_title = status_names.get(filter_status, 'Игры')
-    
+
+    # 4. ПОЛУЧАЕМ ТЕГИ (ОДИН РАЗ, ВНЕ ВСЯКИХ УСЛОВИЙ)
+    all_tags = db.session.query(
+        Tag,
+        func.count(GameTags.game_id).label('game_count')
+    ).outerjoin(
+        GameTags, Tag.id == GameTags.tag_id
+    ).group_by(
+        Tag.id
+    ).order_by(
+        func.count(GameTags.game_id).desc(),
+        Tag.name.asc()
+    ).all()
+    all_tags = [tag for tag, count in all_tags]
+
+    # 5. ВОЗВРАЩАЕМ ШАБЛОН (ОДИН РАЗ, В КОНЦЕ)
     return render_template(
-        'index.html', 
-        games=games, 
+        'index.html',
+        games=games,
         pagination=pagination,
         recommended_games=recommended_games,
         user_status_counts=user_status_counts,
@@ -545,26 +569,28 @@ def index():
         current_filter=filter_status,
         category_title=category_title,
         is_empty_category=(filter_status != 'all' and not games),
-        user_game_statuses=user_game_statuses  # ← передаём статусы игр пользователя
+        user_game_statuses=user_game_statuses,
+        all_tags=all_tags,           # <-- ТЕГИ ПЕРЕДАЮТСЯ ВСЕГДА
+        selected_tag_id=filter_tag
     )
 
 @app.route('/game/<int:game_id>')
 def game_page(game_id):
     game = Game.query.get_or_404(game_id)
-    
+
     user_status = None
     if current_user.is_authenticated:
         user_status = UserGameStatus.query.filter_by(
-            user_id=current_user.id, 
+            user_id=current_user.id,
             game_id=game_id
         ).first()
-    
+
     # Похожие игры на основе тегов
     similar_games = []
     if game.tags:
         # Берем ID тегов текущей игры
         tag_ids = [tag.id for tag in game.tags]
-        
+
         # Ищем игры с такими же тегами, исключая текущую
         similar_games = Game.query.join(GameTags).filter(
             GameTags.tag_id.in_(tag_ids),
@@ -572,10 +598,10 @@ def game_page(game_id):
         ).group_by(Game.id).order_by(
             db.func.count(GameTags.tag_id).desc()
         ).limit(4).all()
-    
+
     return render_template(
-        'game.html', 
-        game=game, 
+        'game.html',
+        game=game,
         user_status=user_status,
         similar_games=similar_games
     )
@@ -584,12 +610,12 @@ def game_page(game_id):
 @login_required
 def update_status(game_id):
     status = request.json.get('status')
-    
+
     user_status = UserGameStatus.query.filter_by(
-        user_id=current_user.id, 
+        user_id=current_user.id,
         game_id=game_id
     ).first()
-    
+
     if user_status:
         user_status.status = status
         user_status.updated_at = datetime.now()
@@ -600,7 +626,7 @@ def update_status(game_id):
             status=status
         )
         db.session.add(user_status)
-    
+
     db.session.commit()
     return jsonify({'success': True})
 
@@ -609,15 +635,15 @@ def update_status(game_id):
 def delete_status(game_id):
     """Удаление статуса игры"""
     user_status = UserGameStatus.query.filter_by(
-        user_id=current_user.id, 
+        user_id=current_user.id,
         game_id=game_id
     ).first()
-    
+
     if user_status:
         db.session.delete(user_status)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Статус удален'})
-    
+
     return jsonify({'success': False, 'message': 'Статус не найден'}), 404
 
 @app.route('/api/theme', methods=['POST'])
@@ -626,14 +652,14 @@ def save_theme():
     """Сохраняет выбранную тему пользователя"""
     data = request.get_json()
     theme = data.get('theme')
-    
+
     # Проверяем, что тема допустима
     allowed_themes = ['light', 'dark', 'neon', 'monochrome']
     if theme in allowed_themes:
         current_user.theme_preference = theme
         db.session.commit()
         return jsonify({'success': True, 'theme': theme})
-    
+
     return jsonify({'success': False, 'error': 'Invalid theme'}), 400
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -641,9 +667,9 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
+
         user = User.query.filter_by(username=username).first()
-        
+
         # Проверяем и пароль через check_password
         if user and user.check_password(password):
             login_user(user)
@@ -651,7 +677,7 @@ def login():
             return redirect(url_for('index'))
         else:
             flash('Неверное имя пользователя или пароль')
-    
+
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -660,7 +686,7 @@ def register():
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
-        
+
         # Проверка длины пароля
         if len(password) < 6:
             flash('Пароль должен быть минимум 6 символов')
@@ -675,25 +701,25 @@ def register():
         if User.query.filter_by(username=username).first():
             flash('Пользователь с таким именем уже существует')
             return render_template('register.html')
-        
+
         if User.query.filter_by(email=email).first():
             flash('Пользователь с таким email уже существует')
             return render_template('register.html')
-        
+
         # Создание пользователя с хешированным паролем
         user = User(
             username=username,
             email=email
         )
         user.set_password(password)  # ← хешируем пароль
-        
+
         db.session.add(user)
         db.session.commit()
-        
+
         login_user(user)
         flash('Регистрация прошла успешно!', 'success')
         return redirect(url_for('index'))
-    
+
     return render_template('register.html')
 
 @app.route('/logout')
